@@ -1,6 +1,3 @@
-<div id="data" style="display:none;">
-    {{_table|Name,Value,date_display,lastValue,rank,Date}}
-</div>
 <style>
     text {
         font-size: 16px;
@@ -59,33 +56,20 @@
         display: none;
     }
 
-    #presentation {
+    #custom-viz {
         height: 90vh;
         width: 90vw;
     }
 </style>
-<div id="presentation"></div>
+<div id="custom-viz"></div>
 <script>
-    // Feel free to change or delete any of the code you see in this editor!
+    var timelineData = {{_data}};
     var iframe = document.getElementsByTagName('iframe');
     for (i = 0; i < iframe.length; i++) {
         var innerDoc = iframe[i].contentDocument || iframe[i].contentWindow.document;
     }
-    var presentation$ = innerDoc.getElementById('presentation');
-    var data$ = innerDoc.getElementById('data');
-    var listTr = data$.getElementsByTagName('table')[0].getElementsByTagName('tr');
-    var data = [];
-    Array.prototype.forEach.call(listTr, function(tr) {
-        if (tr.className === "") {
-            var listTd = tr.getElementsByTagName('td');
-            var itemData = {};
-            Array.prototype.forEach.call(listTd, function(td) {
-                var key = td.attributes['data-field'].value;
-                itemData[key] = td.innerText;
-            });
-            data.push(itemData);
-        }
-    });
+    var presentation$ = innerDoc.getElementById('custom-viz');
+
     var height = presentation$.offsetHeight;
     var width = presentation$.offsetWidth;
 
@@ -105,29 +89,8 @@
     };
 
     let barPadding = (height - (margin.bottom + margin.top)) / (top_n * 5);
-
-    // let title = svg.append('text')
-    //     .attr('class', 'title')
-    //     .attr('y', 24)
-    //     .html('18 years of Interbrand’s Top Global Brands');
-    //
-    // let subTitle = svg.append("text")
-    //     .attr("class", "subTitle")
-    //     .attr("y", 55)
-    //     .html("Brand value, $m");
-    //
-    // let caption = svg.append('text')
-    //     .attr('class', 'caption')
-    //     .attr('x', width)
-    //     .attr('y', height-5)
-    //     .style('text-anchor', 'end')
-    //     .html('Source: Interbrand');
-
     let date, minDate, maxDate;
-  d3.csv('/api/data/ipE4xJhLBkn8H8jisFisAdHKvepFR5I4bGzRySZ2aaXlJgie?entityName=Dynamic%20Covid-19%20Timeline%20Formated%20Data&exportFormat=csv&c9SqlFilter=select%20*%20order%20by%20date%20asc%2C%20rank%20asc', function(data) {   
-        //if (error) throw error;
 
-        //console.log(data);
     const halo = function (text, strokeWidth) {
         text.select(function () {
             return this.parentNode.insertBefore(this.cloneNode(true), this);
@@ -139,212 +102,204 @@
             .style('opacity', 1);
 
     }
-        data.forEach(function (d) {
-            d.Value = parseInt(d.Value),
-                d.lastValue = parseInt(d.lastValue),
-                d.lastValue = isNaN(d.lastValue) ? 0 : parseInt(d.lastValue),
-                d.Value = isNaN(d.Value) ? 0 : parseInt(d.Value),
-                d.Date = parseInt(d.Date),
-                d.colour = d3.hsl(Math.random() * 360, 0.75, 0.75),
-                d.rank = parseInt(d.rank),
-                minDate = (minDate === undefined) ? d.Date : (minDate > d.Date ? d.Date : minDate),
-                maxDate = (maxDate === undefined) ? d.Date : (maxDate < d.Date ? d.Date : maxDate)
-        });
+    timelineData.forEach(function (d) {
+        d.value = parseInt(d.value),
+            d.lastValue = isNaN(d.lastValue) ? 0 : parseInt(d.lastValue),
+            d.colour = d3.hsl(Math.random() * 360, 0.75, 0.75),
+            minDate = (minDate === undefined) ? d.date : (minDate > d.date ? d.date : minDate),
+            maxDate = (maxDate === undefined) ? d.date : (maxDate < d.date ? d.date : maxDate)
+    });
 
-        date = minDate;
+    date = minDate;
 
-        console.log(minDate);
-        console.log(maxDate);
+    let dateSlice = timelineData.filter(d => d.date == date && !isNaN(d.value))
+        .sort((a, b) => b.Value - a.Value)
+        .slice(0, top_n);
 
-        let dateSlice = data.filter(d => d.Date == date && !isNaN(d.Value))
+    dateSlice.forEach((d, i) => d.rank = i);
+
+    let x = d3.scale.linear()
+        .domain([0, d3.max(dateSlice, d => d.value)])
+        .range([margin.left, width - margin.right - 65]);
+    let y = d3.scale.linear()
+        .domain([top_n, 0])
+        .range([height - margin.bottom, margin.top]);
+
+    let xAxis = d3.svg.axis().orient("top")
+        .scale(x)
+        .ticks(width > 500 ? 5 : 2)
+        .tickSize(-(height - margin.top - margin.bottom))
+        .tickFormat(d => d3.format(',')(d));
+
+    svg.append('g')
+        .attr('class', 'axis xAxis')
+        .attr('transform', `translate(0, ${margin.top})`)
+        .call(xAxis)
+        .selectAll('.tick line')
+        .classed('origin', d => d == 0);
+
+    svg.selectAll('rect.bar')
+        .data(dateSlice, d => d.name)
+        .enter()
+        .append('rect')
+        .attr('class', 'bar')
+        .attr('x', x(0) + 1)
+        .attr('width', d => x(d.value) - x(0) - 1)
+        .attr('y', d => y(d.rank) + 5)
+        .attr('height', y(1) - y(0) - barPadding)
+        .style('fill', d => d.colour);
+
+    svg.selectAll('text.label')
+        .data(dateSlice, d => d.name)
+        .enter()
+        .append('text')
+        .attr('class', 'label')
+        .attr('x', d => x(d.value) - 8)
+        .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1)
+        .style('text-anchor', 'end')
+        .html(d => d.name);
+
+    svg.selectAll('text.valueLabel')
+        .data(dateSlice, d => d.name)
+        .enter()
+        .append('text')
+        .attr('class', 'valueLabel')
+        .attr('x', d => x(d.value) + 5)
+        .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1)
+        .text(d => d3.format(',.0f')(d.lastValue));
+
+    let dateText = svg.append('text')
+        .attr('class', 'dateText')
+        .attr('x', width - margin.right)
+        .attr('y', height - 25)
+        .style('text-anchor', 'end')
+        .html(moment(Math.trunc(date)).format('DD MMM'))
+        .call(halo, 10);
+
+
+    let ticker = d3.interval(e => {
+
+        dateSlice = timelineData.filter(d => d.date == date && !isNaN(d.value))
             .sort((a, b) => b.Value - a.Value)
             .slice(0, top_n);
 
         dateSlice.forEach((d, i) => d.rank = i);
 
-        let x = d3.scale.linear()
-            .domain([0, d3.max(dateSlice, d => d.Value)])
-            .range([margin.left, width - margin.right - 65]);
-        let y = d3.scale.linear()
-            .domain([top_n, 0])
-            .range([height - margin.bottom, margin.top]);
 
-        let xAxis = d3.svg.axis().orient("top")
-            .scale(x)
-            .ticks(width > 500 ? 5 : 2)
-            .tickSize(-(height - margin.top - margin.bottom))
-            .tickFormat(d => d3.format(',')(d));
+        x.domain([0, d3.max(dateSlice, d => d.value)]);
 
-        svg.append('g')
-            .attr('class', 'axis xAxis')
-            .attr('transform', `translate(0
-, ${margin.top})`)
-            .call(xAxis)
-            .selectAll('.tick line')
-            .classed('origin', d => d == 0);
+        svg.select('.xAxis')
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .call(xAxis);
 
-        svg.selectAll('rect.bar')
-            .data(dateSlice, d => d.Name)
+        let bars = svg.selectAll('.bar').data(dateSlice, d => d.name);
+
+        bars
             .enter()
             .append('rect')
-            .attr('class', 'bar')
+            .attr('class', d => `bar ${d.name.replace(/s/g, '_')}`)
             .attr('x', x(0) + 1)
-            .attr('width', d => x(d.Value) - x(0) - 1)
-            .attr('y', d => y(d.rank) + 5)
+            .attr('width', d => x(d.value) - x(0) - 1)
+            .attr('y', d => y(top_n + 1) + 5)
             .attr('height', y(1) - y(0) - barPadding)
-            .style('fill', d => d.colour);
+            .style('fill', d => d.colour)
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('y', d => y(d.rank) + 5);
 
-        svg.selectAll('text.label')
-            .data(dateSlice, d => d.Name)
+        bars
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('width', d => x(d.value) - x(0) - 1)
+            .attr('y', d => y(d.rank) + 5);
+
+        bars
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('width', d => x(d.value) - x(0) - 1)
+            .attr('y', d => y(top_n + 1) + 5)
+            .remove();
+
+        let labels = svg.selectAll('.label')
+            .data(dateSlice, d => d.name);
+
+        labels
             .enter()
             .append('text')
             .attr('class', 'label')
-            .attr('x', d => x(d.Value) - 8)
-            .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1)
+            .attr('x', d => x(d.value) - 8)
+            .attr('y', d => y(top_n + 1) + 5 + ((y(1) - y(0)) / 2))
             .style('text-anchor', 'end')
-            .html(d => d.Name);
+            .html(d => d.name)
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
 
-        svg.selectAll('text.valueLabel')
-            .data(dateSlice, d => d.Name)
+
+        labels
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('x', d => x(d.value) - 8)
+            .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
+
+        labels
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('x', d => x(d.value) - 8)
+            .attr('y', d => y(top_n + 1) + 5)
+            .remove();
+
+
+        let valueLabels = svg.selectAll('.valueLabel').data(dateSlice, d => d.name);
+
+        valueLabels
             .enter()
             .append('text')
             .attr('class', 'valueLabel')
-            .attr('x', d => x(d.Value) + 5)
+            .attr('x', d => x(d.value) + 5)
+            .attr('y', d => y(top_n + 1) + 5)
+            .text(d => d3.format(',.0f')(d.lastValue))
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
+
+        valueLabels
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('x', d => x(d.value) + 5)
             .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1)
-            .text(d => d3.format(',.0f')(d.lastValue));
-
-        let dateText = svg.append('text')
-            .attr('class', 'dateText')
-            .attr('x', width - margin.right)
-            .attr('y', height - 25)
-            .style('text-anchor', 'end')
-            .html(moment(Math.trunc(date)).format('DD MMM'))
-            .call(halo, 10);
+            .tween("text", function (d) {
+                let i = d3.interpolateRound(d.lastValue, d.value);
+                return function (t) {
+                    this.textContent = d3.format(',')(i(t));
+                };
+            });
 
 
-        let ticker = d3.interval(e => {
+        valueLabels
+            .exit()
+            .transition()
+            .duration(tickDuration)
+            .ease("linear")
+            .attr('x', d => x(d.value) + 25)
+            .attr('y', d => y(top_n + 1) + 25)
+            .remove();
 
-            dateSlice = data.filter(d => d.Date == date && !isNaN(d.Value))
-                .sort((a, b) => b.Value - a.Value)
-                .slice(0, top_n);
+        dateText.html(moment(Math.trunc(date)).format('DD MMM'));
+        if (date == maxDate) ticker.stop();
+        date = parseInt(moment.tz(date, 'America/Los_Angeles').add(1, 'days').format('x'));
+    }, tickDuration);
 
-            dateSlice.forEach((d, i) => d.rank = i);
-
-
-            x.domain([0, d3.max(dateSlice, d => d.Value)]);
-
-            svg.select('.xAxis')
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .call(xAxis);
-
-            let bars = svg.selectAll('.bar').data(dateSlice, d => d.Name);
-
-            bars
-                .enter()
-                .append('rect')
-                .attr('class', d => `bar ${d.Name.replace(/s/g, '_')}`)
-                .attr('x', x(0) + 1)
-                .attr('width', d => x(d.Value) - x(0) - 1)
-                .attr('y', d => y(top_n + 1) + 5)
-                .attr('height', y(1) - y(0) - barPadding)
-                .style('fill', d => d.colour)
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('y', d => y(d.rank) + 5);
-
-            bars
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('width', d => x(d.Value) - x(0) - 1)
-                .attr('y', d => y(d.rank) + 5);
-
-            bars
-                .exit()
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('width', d => x(d.Value) - x(0) - 1)
-                .attr('y', d => y(top_n + 1) + 5)
-                .remove();
-
-            let labels = svg.selectAll('.label')
-                .data(dateSlice, d => d.Name);
-
-            labels
-                .enter()
-                .append('text')
-                .attr('class', 'label')
-                .attr('x', d => x(d.Value) - 8)
-                .attr('y', d => y(top_n + 1) + 5 + ((y(1) - y(0)) / 2))
-                .style('text-anchor', 'end')
-                .html(d => d.Name)
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
-
-
-            labels
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('x', d => x(d.Value) - 8)
-                .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
-
-            labels
-                .exit()
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('x', d => x(d.Value) - 8)
-                .attr('y', d => y(top_n + 1) + 5)
-                .remove();
-
-
-            let valueLabels = svg.selectAll('.valueLabel').data(dateSlice, d => d.Name);
-
-            valueLabels
-                .enter()
-                .append('text')
-                .attr('class', 'valueLabel')
-                .attr('x', d => x(d.Value) + 5)
-                .attr('y', d => y(top_n + 1) + 5)
-                .text(d => d3.format(',.0f')(d.lastValue))
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1);
-
-            valueLabels
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('x', d => x(d.Value) + 5)
-                .attr('y', d => y(d.rank) + 5 + ((y(1) - y(0)) / 2) + 1)
-                .tween("text", function (d) {
-                    let i = d3.interpolateRound(d.lastValue, d.Value);
-                    return function (t) {
-                        this.textContent = d3.format(',')(i(t));
-                    };
-                });
-
-
-            valueLabels
-                .exit()
-                .transition()
-                .duration(tickDuration)
-                .ease("linear")
-                .attr('x', d => x(d.Value) + 25)
-                .attr('y', d => y(top_n + 1) + 25)
-                .remove();
-
-            dateText.html(moment(Math.trunc(date)).format('DD MMM'));
-            if (date == maxDate) ticker.stop();
-            date = parseInt(moment.tz(date, 'America/Los_Angeles').add(1, 'days').format('x'));
-        }, tickDuration);
-});
 </script>
